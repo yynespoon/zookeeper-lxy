@@ -323,7 +323,9 @@ public class BlueThrottle {
 
         long now = Time.currentElapsedTime();
         long diff = now - lastTime;
-
+        // fillTime 相当于每次隔多少时间生成一次令牌
+        // fillCount 相当于每次生成多少个令牌
+        // maxToken 相当于生成令牌最大数
         if (diff > fillTime) {
             int refill = (int) (diff * fillCount / fillTime);
             tokens = Math.min(tokens + refill, maxTokens);
@@ -331,6 +333,8 @@ public class BlueThrottle {
         }
 
         // A freeze time of -1 disables BLUE randomized throttling
+        // 这里相当于对突发流量做了处理
+        // 设置桶中最大令牌大小限制 每隔一段时间会对桶中最大剩余令牌数做处理
         if (freezeTime != -1) {
             if (!checkBlue(now)) {
                 return false;
@@ -346,20 +350,27 @@ public class BlueThrottle {
     }
 
     public synchronized boolean checkBlue(long now) {
+        // 桶中剩余可生成令牌的空间
         int length = maxTokens - tokens;
+        // 桶中令牌容量
         int limit = maxTokens;
+        // 时间差
         long diff = now - lastFreeze;
+        // 桶中可生成令牌空间数量丢弃阈值
         long threshold = Math.round(maxTokens * decreasePoint);
 
         if (diff > freezeTime) {
+            // 如果可生成空间等于桶大小 说明令牌全部被获取 请求量大
+            // 则每次增大丢失请求的几率
             if ((length == limit) && (drop < 1)) {
                 drop = Math.min(drop + dropIncrease, 1);
             } else if ((length <= threshold) && (drop > 0)) {
+                // 如果请求量小于丢弃阈值 说明此时有空闲令牌 请求量没有达到配置中最大请求
+                // 则每次减少丢失请求几率
                 drop = Math.max(drop - dropDecrease, 0);
             }
             lastFreeze = now;
         }
-
         return !(rng.nextDouble() < drop);
     }
 

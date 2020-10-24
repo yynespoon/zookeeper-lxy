@@ -175,8 +175,10 @@ public class NIOServerCnxn extends ServerCnxn {
 
         if (incomingBuffer.remaining() == 0) { // have we read length bytes?
             incomingBuffer.flip();
+            //记录收到的字节数 监控用
             packetReceived(4 + incomingBuffer.remaining());
             if (!initialized) {
+                // 初始化报文的处理 主要包括与客户端 sessionId 和 超时时间 的协商
                 readConnectRequest();
             } else {
                 readRequest();
@@ -321,6 +323,7 @@ public class NIOServerCnxn extends ServerCnxn {
                 return;
             }
             if (k.isReadable()) {
+                //读取报文长度 用开头的 4 个字节表示
                 int rc = sock.read(incomingBuffer);
                 if (rc < 0) {
                     handleFailedRead();
@@ -544,6 +547,7 @@ public class NIOServerCnxn extends ServerCnxn {
             throw new IOException("ZooKeeperServer not running");
         }
         // checkRequestSize will throw IOException if request is rejected
+        // 获取报文长度并创建对应长度大小的 buffer
         zkServer.checkRequestSizeWhenReceivingMessage(len);
         incomingBuffer = ByteBuffer.allocate(len);
         return true;
