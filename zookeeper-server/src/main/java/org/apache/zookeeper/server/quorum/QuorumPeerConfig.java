@@ -503,6 +503,9 @@ public class QuorumPeerConfig {
 
         // backward compatibility - dynamic configuration in the same file as
         // static configuration params see writeDynamicConfig()
+
+        // 是否进行动态配置，如果配置动态配置文件地址则会在下面进行解析
+        // org/apache/zookeeper/server/quorum/QuorumPeerConfig.java:201
         if (dynamicConfigFileStr == null) {
             setupQuorumPeerConfig(zkProp, true);
             if (isDistributed() && isReconfigEnabled()) {
@@ -671,6 +674,7 @@ public class QuorumPeerConfig {
              * The default QuorumVerifier is QuorumMaj
              */
             //LOG.info("Defaulting to majority quorums");
+            //无层级关系的配置解析走这里
             return new QuorumMaj(dynamicConfigProp);
         }
     }
@@ -692,6 +696,9 @@ public class QuorumPeerConfig {
      */
     public static QuorumVerifier parseDynamicConfig(Properties dynamicConfigProp, int eAlg, boolean warnings, boolean configBackwardCompatibilityMode) throws IOException, ConfigException {
         boolean isHierarchical = false;
+        //这里涉及到 zk 集群组跟权重的概念
+        //集群内组权重过半集群稳定
+        //组根据权重进行投票
         for (Entry<Object, Object> entry : dynamicConfigProp.entrySet()) {
             String key = entry.getKey().toString().trim();
             if (key.startsWith("group") || key.startsWith("weight")) {

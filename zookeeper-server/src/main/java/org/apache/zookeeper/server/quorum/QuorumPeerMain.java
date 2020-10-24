@@ -125,13 +125,15 @@ public class QuorumPeerMain {
         }
 
         // Start and schedule the the purge task
+        // 对后台 zk 日志处理
+        // 会定时删除日志并将数据合并到快照文件
         DatadirCleanupManager purgeMgr = new DatadirCleanupManager(
             config.getDataDir(),
             config.getDataLogDir(),
             config.getSnapRetainCount(),
             config.getPurgeInterval());
         purgeMgr.start();
-
+        // 判断是否是集群模式
         if (args.length == 1 && config.isDistributed()) {
             runFromConfig(config);
         } else {
@@ -149,6 +151,7 @@ public class QuorumPeerMain {
         }
 
         LOG.info("Starting quorum peer, myid=" + config.getServerId());
+        // 应该是跟监控相关的组件，默认是 default 空实现
         MetricsProvider metricsProvider;
         try {
             metricsProvider = MetricsProviderBootstrap.startMetricsProvider(
@@ -162,6 +165,7 @@ public class QuorumPeerMain {
             ServerCnxnFactory cnxnFactory = null;
             ServerCnxnFactory secureCnxnFactory = null;
 
+            //创建服务端通信相关组件
             if (config.getClientPortAddress() != null) {
                 cnxnFactory = ServerCnxnFactory.createFactory();
                 cnxnFactory.configure(config.getClientPortAddress(), config.getMaxClientCnxns(), config.getClientPortListenBacklog(), false);
@@ -173,12 +177,16 @@ public class QuorumPeerMain {
             }
 
             quorumPeer = getQuorumPeer();
+            //创建加载数据的组件
             quorumPeer.setTxnFactory(new FileTxnSnapLog(config.getDataLogDir(), config.getDataDir()));
+            // 配置是否是 local session
             quorumPeer.enableLocalSessions(config.areLocalSessionsEnabled());
             quorumPeer.enableLocalSessionsUpgrading(config.isLocalSessionsUpgradingEnabled());
             //quorumPeer.setQuorumPeers(config.getAllMembers());
+            //选举算法
             quorumPeer.setElectionType(config.getElectionAlg());
             quorumPeer.setMyid(config.getServerId());
+            //可以理解为定时任务执行时间最大间隔
             quorumPeer.setTickTime(config.getTickTime());
             quorumPeer.setMinSessionTimeout(config.getMinSessionTimeout());
             quorumPeer.setMaxSessionTimeout(config.getMaxSessionTimeout());
@@ -188,11 +196,13 @@ public class QuorumPeerMain {
             quorumPeer.setObserverMasterPort(config.getObserverMasterPort());
             quorumPeer.setConfigFileName(config.getConfigFilename());
             quorumPeer.setClientPortListenBacklog(config.getClientPortListenBacklog());
+            //初始化zk内存中存储的数据存储类
             quorumPeer.setZKDatabase(new ZKDatabase(quorumPeer.getTxnFactory()));
             quorumPeer.setQuorumVerifier(config.getQuorumVerifier(), false);
             if (config.getLastSeenQuorumVerifier() != null) {
                 quorumPeer.setLastSeenQuorumVerifier(config.getLastSeenQuorumVerifier(), false);
             }
+            //初始化存储类的配置
             quorumPeer.initConfigInZKDatabase();
             quorumPeer.setCnxnFactory(cnxnFactory);
             quorumPeer.setSecureCnxnFactory(secureCnxnFactory);
