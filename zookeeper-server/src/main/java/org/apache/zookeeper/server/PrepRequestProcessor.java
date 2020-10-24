@@ -174,6 +174,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
                     lastChange = new ChangeRecord(-1, path, n.stat, children.size(), zks.getZKDatabase().aclForNode(n));
 
                     if (digestEnabled) {
+                        // 计算各种版本号时间流水号之类的
                         lastChange.precalculatedDigest = new PrecalculatedDigest(
                                 digestCalculator.calculateDigest(path, n), 0);
                     }
@@ -671,18 +672,25 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
             data = createRequest.getData();
             ttl = -1;
         }
+        // 节点属性 持久 临时 持久有序 临时有序 容器 持久过期 持久顺序过期
         CreateMode createMode = CreateMode.fromFlag(flags);
+        // 校验操作合法性以及 session 是否过期
         validateCreateRequest(path, createMode, request, ttl);
+        // 校验路径中是否存在 /
         String parentPath = validatePathForCreate(path, request.sessionId);
-
+        // todo 权限相关
         List<ACL> listACL = fixupACL(path, request.authInfo, acl);
+        // zk 中对节点的更新不会直接操作内存或者日志 而是包装成 ChangeRecord
+        // 主要目的是让 zk 对请求的处理保证不会出现竞态条件
+        // 获取父节点对应的 ChangeRecord
         ChangeRecord parentRecord = getRecordForPath(parentPath);
-
+        // todo 权限相关
         zks.checkACL(request.cnxn, parentRecord.acl, ZooDefs.Perms.CREATE, request.authInfo, path, listACL);
         int parentCVersion = parentRecord.stat.getCversion();
         if (createMode.isSequential()) {
             path = path + String.format(Locale.ENGLISH, "%010d", parentCVersion);
         }
+        // 校验节点 path 合法性
         validatePath(path, request.sessionId);
         try {
             if (getRecordForPath(path) != null) {
@@ -691,10 +699,12 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
         } catch (KeeperException.NoNodeException e) {
             // ignore this one
         }
+        // 不允许父节点为临时节点
         boolean ephemeralParent = EphemeralType.get(parentRecord.stat.getEphemeralOwner()) == EphemeralType.NORMAL;
         if (ephemeralParent) {
             throw new KeeperException.NoChildrenForEphemeralsException(path);
         }
+        // 设置请求体
         int newCversion = parentRecord.stat.getCversion() + 1;
         if (type == OpCode.createContainer) {
             request.setTxn(new CreateContainerTxn(path, data, listACL, newCversion));
@@ -713,6 +723,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
         } else if (createMode.isEphemeral()) {
             ephemeralOwner = request.sessionId;
         }
+        // 更新父节点相关的信息
         StatPersisted s = DataTree.createStat(hdr.getZxid(), hdr.getTime(), ephemeralOwner);
         parentRecord = parentRecord.duplicate(request.getHdr().getZxid());
         parentRecord.childCount++;
@@ -727,6 +738,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
         nodeRecord.precalculatedDigest = precalculateDigest(
                 DigestOpCode.ADD, path, nodeRecord.data, s);
         setTxnDigest(request, nodeRecord.precalculatedDigest);
+        // 添加到队列
         addChangeRecord(nodeRecord);
     }
 
