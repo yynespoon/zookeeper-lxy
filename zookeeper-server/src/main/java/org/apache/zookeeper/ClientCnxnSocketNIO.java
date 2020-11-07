@@ -79,12 +79,18 @@ public class ClientCnxnSocketNIO extends ClientCnxnSocket {
             }
             if (!incomingBuffer.hasRemaining()) {
                 incomingBuffer.flip();
+                // zk 的请求报文会先发 4 个字节作为整个报文的长度
+                // 然后根据报文长度构建对应长度的请求 buffer
                 if (incomingBuffer == lenBuffer) {
                     recvCount.getAndIncrement();
                     readLength();
                 } else if (!initialized) {
+                    // 如果没有完成连接的协商会走到协商报文的解析
                     readConnectResult();
+                    // 协商报文解析成功如果此时处于不对任何事件感兴趣阶段
+                    // 则注册读事件
                     enableRead();
+                    // 如果有队列中有数据则注册写事件
                     if (findSendablePacket(outgoingQueue, sendThread.tunnelAuthInProgress()) != null) {
                         // Since SASL authentication has completed (if client is configured to do so),
                         // outgoing packets waiting in the outgoingQueue can now be sent.
@@ -95,6 +101,7 @@ public class ClientCnxnSocketNIO extends ClientCnxnSocket {
                     updateLastHeard();
                     initialized = true;
                 } else {
+                    //这部分是处理非协商请求的响应
                     sendThread.readResponse(incomingBuffer);
                     lenBuffer.clear();
                     incomingBuffer = lenBuffer;
@@ -336,6 +343,9 @@ public class ClientCnxnSocketNIO extends ClientCnxnSocket {
         ClientCnxn cnxn) throws IOException, InterruptedException {
         selector.select(waitTimeOut);
         Set<SelectionKey> selected;
+        // 这里不会阻塞, 这里拿到的是被已经触发了事件的数组的 key
+        // 也可以看到 zk 下面的注释
+        // 从这几行注释也能看出 zk 对于高性能跟高可复用的的追求
         synchronized (this) {
             selected = selector.selectedKeys();
         }
@@ -346,15 +356,18 @@ public class ClientCnxnSocketNIO extends ClientCnxnSocket {
         for (SelectionKey k : selected) {
             SocketChannel sc = ((SocketChannel) k.channel());
             if ((k.readyOps() & SelectionKey.OP_CONNECT) != 0) {
+                // 这里是在前面获取连接不成功的时候在这里再次连接
                 if (sc.finishConnect()) {
                     updateLastSendAndHeard();
                     updateSocketAddresses();
                     sendThread.primeConnection();
                 }
             } else if ((k.readyOps() & (SelectionKey.OP_READ | SelectionKey.OP_WRITE)) != 0) {
+                // 处理 IO 事件
                 doIO(pendingQueue, cnxn);
             }
         }
+        // 这里相当于再处理一遍写事件
         if (sendThread.getZkState().isConnected()) {
             if (findSendablePacket(outgoingQueue, sendThread.tunnelAuthInProgress()) != null) {
                 enableWrite();

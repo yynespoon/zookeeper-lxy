@@ -1291,7 +1291,7 @@ public class ClientCnxn {
                         }
                         to = Math.min(to, pingRwTimeout - idlePingRwServer);
                     }
-                    // 这里就是涉及到第三阶段真正请求处理的逻辑
+                    // 这里处理发送的逻辑
                     clientCnxnSocket.doTransport(to, pendingQueue, ClientCnxn.this);
                 } catch (Throwable e) {
                     if (closing) {
@@ -1319,6 +1319,7 @@ public class ClientCnxn {
             synchronized (state) {
                 // When it comes to this point, it guarantees that later queued
                 // packet to outgoingQueue will be notified of death.
+                // 清理发送队列中未响应和未发送的请求
                 cleanup();
             }
             clientCnxnSocket.close();
