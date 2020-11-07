@@ -1001,12 +1001,15 @@ public class ClientCnxn {
                 clientCnxnSocket.getLocalSocketAddress(),
                 clientCnxnSocket.getRemoteSocketAddress());
             isFirstConnect = false;
+            // 首次连接不会有 sessionId, sessionId 只出现在与服务器断开连接重连时
             long sessId = (seenRwServerBefore) ? sessionId : 0;
+            // 构建协商请求
             ConnectRequest conReq = new ConnectRequest(0, lastZxid, sessionTimeout, sessId, sessionPasswd);
             // We add backwards since we are pushing into the front
             // Only send if there's a pending watch
             // TODO: here we have the only remaining use of zooKeeper in
             // this class. It's to be eliminated!
+            // 这块逻辑是当与 server 断开连接的时候重新连接需要将之前的 watcher 重新注册到 server
             if (!clientConfig.getBoolean(ZKClientConfig.DISABLE_AUTO_WATCH_RESET)) {
                 List<String> dataWatches = zooKeeper.getDataWatches();
                 List<String> existWatches = zooKeeper.getExistWatches();
@@ -1058,6 +1061,7 @@ public class ClientCnxn {
 
                         Record record;
                         int opcode;
+                        // 之前 watcher 都是一次性触发 后面出现了持久性的 watcher 所以会有两个 watcher 头
                         if (persistentWatchesBatch.isEmpty() && persistentRecursiveWatchesBatch.isEmpty()) {
                             // maintain compatibility with older servers - if no persistent/recursive watchers
                             // are used, use the old version of SetWatches
@@ -1068,13 +1072,15 @@ public class ClientCnxn {
                                     childWatchesBatch, persistentWatchesBatch, persistentRecursiveWatchesBatch);
                             opcode = OpCode.setWatches2;
                         }
+                        // 构建设置 watcher 的请求
                         RequestHeader header = new RequestHeader(ClientCnxn.SET_WATCHES_XID, opcode);
                         Packet packet = new Packet(header, new ReplyHeader(), record, null, null);
+                        // 发送队列
                         outgoingQueue.addFirst(packet);
                     }
                 }
             }
-
+            // 构建权限校验相关报文
             for (AuthData id : authInfo) {
                 outgoingQueue.addFirst(
                     new Packet(
@@ -1084,7 +1090,10 @@ public class ClientCnxn {
                         null,
                         null));
             }
+            // 构建请求协商报文
+            // 都调用了 addFirst 但是有先后顺序 协商请求 > 权限校验 > reset watcher
             outgoingQueue.addFirst(new Packet(null, null, conReq, null, null, readOnly));
+            // 注册读写事件 也就是准备好发送/读取的标识
             clientCnxnSocket.connectionPrimed();
             LOG.debug("Session establishment request sent on {}", clientCnxnSocket.getRemoteSocketAddress());
         }
@@ -1172,6 +1181,7 @@ public class ClientCnxn {
 
         @Override
         public void run() {
+            // 这几行就是记录了下时间 主要就是为发送 ping 作准备
             clientCnxnSocket.introduce(this, sessionId, outgoingQueue);
             clientCnxnSocket.updateNow();
             clientCnxnSocket.updateLastSendAndHeard();
@@ -1181,21 +1191,26 @@ public class ClientCnxn {
             InetSocketAddress serverAddress = null;
             while (state.isAlive()) {
                 try {
+                    // 这些代码是为了处理如果连接失败会怎样
                     if (!clientCnxnSocket.isConnected()) {
                         // don't re-establish connection if we are closing
                         if (closing) {
                             break;
                         }
+                        // 如果最近有 ping 成功的机器，则就去连接这个
+                        // 如果没有就从一开始提供的地址组里轮询去找
                         if (rwServerAddress != null) {
                             serverAddress = rwServerAddress;
                             rwServerAddress = null;
                         } else {
                             serverAddress = hostProvider.next(1000);
                         }
+                        //这里就是连接的逻辑
                         startConnect(serverAddress);
                         clientCnxnSocket.updateLastSendAndHeard();
                     }
-
+                    // 这里是连接成功之后的逻辑
+                    // 主要就是安全性相关的处理
                     if (state.isConnected()) {
                         // determine whether we need to send an AuthFailed event.
                         if (zooKeeperSaslClient != null) {
@@ -1231,6 +1246,7 @@ public class ClientCnxn {
                         }
                         to = readTimeout - clientCnxnSocket.getIdleRecv();
                     } else {
+                        // 这里记录了下是否超时
                         to = connectTimeout - clientCnxnSocket.getIdleRecv();
                     }
 
@@ -1242,6 +1258,8 @@ public class ClientCnxn {
                         LOG.warn(warnInfo);
                         throw new SessionTimeoutException(warnInfo);
                     }
+                    // 这里是连接成功之后会计算下次发送 ping 的时间
+                    // 如果需要就会发送 ping 报文
                     if (state.isConnected()) {
                         //1000(1 second) is to prevent race condition missing to send the second ping
                         //also make sure not to send too many pings when readTimeout is small
@@ -1250,6 +1268,7 @@ public class ClientCnxn {
                                              - ((clientCnxnSocket.getIdleSend() > 1000) ? 1000 : 0);
                         //send a ping request either time is due or no packet sent out within MAX_SEND_PING_INTERVAL
                         if (timeToNextPing <= 0 || clientCnxnSocket.getIdleSend() > MAX_SEND_PING_INTERVAL) {
+                            // 发送 ping 报文并更新发送时间
                             sendPing();
                             clientCnxnSocket.updateLastSend();
                         } else {
@@ -1258,7 +1277,8 @@ public class ClientCnxn {
                             }
                         }
                     }
-
+                    // todo 这地方逻辑不太理解
+                    // 这里单独对 readonly 的心跳进行的处理 仅看客户端看不出为什么要这么做
                     // If we are in read-only mode, seek for read/write server
                     if (state == States.CONNECTEDREADONLY) {
                         long now = Time.currentElapsedTime();
@@ -1271,7 +1291,7 @@ public class ClientCnxn {
                         }
                         to = Math.min(to, pingRwTimeout - idlePingRwServer);
                     }
-
+                    // 这里就是涉及到第三阶段真正请求处理的逻辑
                     clientCnxnSocket.doTransport(to, pendingQueue, ClientCnxn.this);
                 } catch (Throwable e) {
                     if (closing) {
@@ -1302,6 +1322,7 @@ public class ClientCnxn {
                 cleanup();
             }
             clientCnxnSocket.close();
+            // 这里广播连接失败或者关闭连接事件
             if (state.isAlive()) {
                 eventThread.queueEvent(new WatchedEvent(Event.EventType.None, Event.KeeperState.Disconnected, null));
             }

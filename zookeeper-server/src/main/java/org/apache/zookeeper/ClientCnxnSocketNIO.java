@@ -256,17 +256,22 @@ public class ClientCnxnSocketNIO extends ClientCnxnSocket {
      * @throws IOException
      */
     void registerAndConnect(SocketChannel sock, InetSocketAddress addr) throws IOException {
+        // 注册连接事件
         sockKey = sock.register(selector, SelectionKey.OP_CONNECT);
+        // 尝试去连接，成功直接返回
         boolean immediateConnect = sock.connect(addr);
         if (immediateConnect) {
+            // 连接协商
             sendThread.primeConnection();
         }
     }
 
     @Override
     void connect(InetSocketAddress addr) throws IOException {
+        // 创建 socket
         SocketChannel sock = createSock();
         try {
+            // 注册连接事件跟完成协商
             registerAndConnect(sock, addr);
         } catch (UnresolvedAddressException | UnsupportedAddressTypeException | SecurityException | IOException e) {
             LOG.error("Unable to open socket to {}", addr);
