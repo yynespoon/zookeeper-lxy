@@ -332,6 +332,7 @@ public class NIOServerCnxn extends ServerCnxn {
                     boolean isPayload;
                     if (incomingBuffer == lenBuffer) { // start of next request
                         incomingBuffer.flip();
+                        // 这里主要是根据长度构建接收数组
                         isPayload = readLength(k);
                         incomingBuffer.clear();
                     } else {
@@ -348,6 +349,7 @@ public class NIOServerCnxn extends ServerCnxn {
                 }
             }
             if (k.isWritable()) {
+                // 写请求
                 handleWrite(k);
 
                 if (!initialized && !getReadInterest() && !getWriteInterest()) {

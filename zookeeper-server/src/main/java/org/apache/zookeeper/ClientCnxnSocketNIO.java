@@ -112,9 +112,11 @@ public class ClientCnxnSocketNIO extends ClientCnxnSocket {
         if (sockKey.isWritable()) {
             Packet p = findSendablePacket(outgoingQueue, sendThread.tunnelAuthInProgress());
 
+            // 这里针对有没有请求体分成了不同的处理方式
             if (p != null) {
                 updateLastSend();
                 // If we already started writing p, p.bb will already exist
+                // 如果没有请求体则会创建一些跟 request 协议相关的必须要的参数 比如报文长度是否只读等
                 if (p.bb == null) {
                     if ((p.requestHeader != null)
                         && (p.requestHeader.getType() != OpCode.ping)
@@ -123,7 +125,11 @@ public class ClientCnxnSocketNIO extends ClientCnxnSocket {
                     }
                     p.createBB();
                 }
+                // createBB 中会将请求构建成 byte
                 sock.write(p.bb);
+                // 下面跟上面方式处理不一样的会用一个队列来保存发出去的 request
+                // 请求完成之后会将请求结果和请求对象重新包装后返回给上层
+                // pendingQueue 就是保存未返回的请求包
                 if (!p.bb.hasRemaining()) {
                     sentCount.getAndIncrement();
                     outgoingQueue.removeFirstOccurrence(p);
@@ -136,6 +142,8 @@ public class ClientCnxnSocketNIO extends ClientCnxnSocket {
                     }
                 }
             }
+            // 队列为空便会取消掉事件, 这也是为什么之前有请求就会注册写事件
+            // 算是一部分性能的提升
             if (outgoingQueue.isEmpty()) {
                 // No more packets to send: turn off write interest flag.
                 // Will be turned on later by a later call to enableWrite(),

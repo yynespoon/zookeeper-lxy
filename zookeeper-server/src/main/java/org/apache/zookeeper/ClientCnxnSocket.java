@@ -138,6 +138,7 @@ abstract class ClientCnxnSocket {
         ByteBufferInputStream bbis = new ByteBufferInputStream(incomingBuffer);
         BinaryInputArchive bbia = BinaryInputArchive.getArchive(bbis);
         ConnectResponse conRsp = new ConnectResponse();
+        // 将返回报文反序列化成 connectResponse 对象
         conRsp.deserialize(bbia, "connect");
 
         // read "is read-only" flag
@@ -151,6 +152,8 @@ abstract class ClientCnxnSocket {
         }
 
         this.sessionId = conRsp.getSessionId();
+        // 这里就是对 server 端返回的超时事件等参数进行配置
+        // 连接时候配置的超时参数会以配置中的为准, 之后会以服务端返回的为准
         sendThread.onConnected(conRsp.getTimeOut(), this.sessionId, conRsp.getPasswd(), isRO);
     }
 
