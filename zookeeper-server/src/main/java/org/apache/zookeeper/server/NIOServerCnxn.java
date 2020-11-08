@@ -225,11 +225,14 @@ public class NIOServerCnxn extends ServerCnxn {
          * with data from the non-direct buffers that we need to
          * send.
          */
+        // 获取堆外内存 默认给的是 64k
         ByteBuffer directBuffer = NIOServerCnxnFactory.getDirectBuffer();
+        //返回 null 代表不使用堆外内存
         if (directBuffer == null) {
             ByteBuffer[] bufferList = new ByteBuffer[outgoingBuffers.size()];
             // Use gathered write call. This updates the positions of the
             // byte buffers to reflect the bytes that were written out.
+            // 一次性性将内容写出去
             sock.write(outgoingBuffers.toArray(bufferList));
 
             // Remove the buffers that we have sent
@@ -238,6 +241,8 @@ public class NIOServerCnxn extends ServerCnxn {
                 if (bb == ServerCnxnFactory.closeConn) {
                     throw new CloseRequestException("close requested", DisconnectReason.CLIENT_CLOSED_CONNECTION);
                 }
+                // 这里根据 packetSentinel 这个报文进行计数
+                // todo 暂时忘了这么做的意义 回看再分析
                 if (bb == packetSentinel) {
                     packetSent();
                 }
@@ -248,7 +253,7 @@ public class NIOServerCnxn extends ServerCnxn {
             }
         } else {
             directBuffer.clear();
-
+            // 这里做的事就是将内容填充到堆外内存 如果内存不够则截取到能够填满内存为止
             for (ByteBuffer b : outgoingBuffers) {
                 if (directBuffer.remaining() < b.remaining()) {
                     /*
@@ -256,6 +261,7 @@ public class NIOServerCnxn extends ServerCnxn {
                      * small to hold everything, nothing will be copied,
                      * so we've got to slice the buffer if it's too big.
                      */
+                    // 截取报文
                     b = (ByteBuffer) b.slice().limit(directBuffer.remaining());
                 }
                 /*
@@ -290,6 +296,7 @@ public class NIOServerCnxn extends ServerCnxn {
                 if (bb == packetSentinel) {
                     packetSent();
                 }
+                // 这里说明之前对报文做过截取 需要重新填充
                 if (sent < bb.remaining()) {
                     /*
                      * We only partially sent this buffer, so we update
@@ -299,6 +306,7 @@ public class NIOServerCnxn extends ServerCnxn {
                     break;
                 }
                 /* We've sent the whole buffer, so drop the buffer */
+                // 这里相当检测发送长度与报文长度是否一致
                 sent -= bb.remaining();
                 outgoingBuffers.remove();
             }

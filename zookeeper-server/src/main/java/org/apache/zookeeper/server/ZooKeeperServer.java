@@ -1014,6 +1014,7 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
         }
 
         try {
+            // 构建响应
             ConnectResponse rsp = new ConnectResponse(
                 0,
                 valid ? cnxn.getSessionTimeout() : 0,
