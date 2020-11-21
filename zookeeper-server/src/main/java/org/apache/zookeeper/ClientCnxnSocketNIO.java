@@ -116,13 +116,16 @@ public class ClientCnxnSocketNIO extends ClientCnxnSocket {
             if (p != null) {
                 updateLastSend();
                 // If we already started writing p, p.bb will already exist
-                // 如果没有请求体则会创建一些跟 request 协议相关的必须要的参数 比如报文长度是否只读等
+                // 如果没有请求体说明这是未发送过的请求 则需要创建请求体
+                // 如果有请求体说明是之前发送过但是没有发送完需要继续发送，此时不需要创建请求体
                 if (p.bb == null) {
                     if ((p.requestHeader != null)
                         && (p.requestHeader.getType() != OpCode.ping)
                         && (p.requestHeader.getType() != OpCode.auth)) {
+                        // ping auth 请求不需要 xid
                         p.requestHeader.setXid(cnxn.getXid());
                     }
+                    // 创建请求体
                     p.createBB();
                 }
                 // createBB 中会将请求构建成 byte

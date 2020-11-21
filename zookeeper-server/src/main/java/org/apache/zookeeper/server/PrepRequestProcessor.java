@@ -318,6 +318,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
      */
     protected void pRequest2Txn(int type, long zxid, Request request, Record record, boolean deserialize) throws KeeperException, IOException, RequestProcessorException {
         if (request.getHdr() == null) {
+            // cxid 是客户端生成的 xid，zxid 是服务端生成的
             request.setHdr(new TxnHeader(request.sessionId, request.cxid, zxid,
                     Time.currentWallTime(), type));
         }
@@ -647,6 +648,20 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements Req
         }
     }
 
+    /**
+     * 这里总共做了以下几件事
+     * 1、创建请求体，也就是将请求体序列化为 XXXRequest 对象，为 request 设置请求体
+     * 2、根据请求节点的类型进行校验
+     * 3、将节点操作包装成 ChangeRecord，ChangeRecord 不会有修改操作，父节点的改变为插入新纪录
+     * 并且插入操作会让 treeDigest 变大 移除操作会让 treeDigest 变小 节点创建时间越晚 treeDigest 越大
+     *
+     * @param type
+     * @param request
+     * @param record
+     * @param deserialize
+     * @throws IOException
+     * @throws KeeperException
+     */
     private void pRequest2TxnCreate(int type, Request request, Record record, boolean deserialize) throws IOException, KeeperException {
         if (deserialize) {
             ByteBufferInputStream.byteBuffer2Record(request.request, record);

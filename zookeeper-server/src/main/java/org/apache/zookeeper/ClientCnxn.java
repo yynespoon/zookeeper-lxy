@@ -321,6 +321,7 @@ public class ClientCnxn {
                 BinaryOutputArchive boa = BinaryOutputArchive.getArchive(baos);
                 boa.writeInt(-1, "len"); // We'll fill this in later
                 if (requestHeader != null) {
+                    // xid type
                     requestHeader.serialize(boa, "header");
                 }
                 if (request instanceof ConnectRequest) {
@@ -1404,7 +1405,7 @@ public class ClientCnxn {
             // We can't call outgoingQueue.clear() here because
             // between iterating and clear up there might be new
             // packets added in queuePacket().
-            Iterator<Packet> iter = outgoingQueue.iterator();
+            Iterator<Packet> iter =  outgoingQueue.iterator();
             while (iter.hasNext()) {
                 Packet p = iter.next();
                 conLossPacket(p);
@@ -1575,6 +1576,7 @@ public class ClientCnxn {
         WatchRegistration watchRegistration,
         WatchDeregistration watchDeregistration) throws InterruptedException {
         ReplyHeader r = new ReplyHeader();
+        // 构建 package 对象并加入队列
         Packet packet = queuePacket(
             h,
             r,
@@ -1586,6 +1588,7 @@ public class ClientCnxn {
             null,
             watchRegistration,
             watchDeregistration);
+        // 这里会同步阻塞等待结果
         synchronized (packet) {
             if (requestTimeout > 0) {
                 // Wait for request completion with timeout

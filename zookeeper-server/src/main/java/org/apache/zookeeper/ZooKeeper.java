@@ -1720,9 +1720,10 @@ public class ZooKeeper implements AutoCloseable {
         validateACL(acl);
 
         final String serverPath = prependChroot(clientPath);
-
+        // 创建请求头
         RequestHeader h = new RequestHeader();
         h.setType(createMode.isContainer() ? ZooDefs.OpCode.createContainer : ZooDefs.OpCode.create);
+
         CreateRequest request = new CreateRequest();
         CreateResponse response = new CreateResponse();
         request.setData(data);
